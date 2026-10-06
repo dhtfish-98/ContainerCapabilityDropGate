@@ -145,10 +145,14 @@ def main() -> int:
             rows = cap_probe_rows(log, 0x2000 if raw else 0, ("INIT", "CHILD_EXEC"))
             details.append({"case": name, "exit": result.returncode, "probe_rows": rows,
                             "log_sha256": sha256(run_dir / f"{name}.log")})
-        held = command(runtime, state, "run", "--no-pivot", "--detach",
-                       "--bundle", str(bundles["held"]), "held")
+        with (run_dir / "held-start.log").open("wb") as stream:
+            held = subprocess.run([str(runtime), "--root", str(state), "run",
+                                   "--no-pivot", "--detach", "--bundle",
+                                   str(bundles["held"]), "held"],
+                                  stdin=subprocess.DEVNULL, stdout=stream,
+                                  stderr=subprocess.STDOUT, timeout=15, check=False)
         if held.returncode != 0:
-            raise AssertionError(f"held container failed: {held.stderr.decode(errors='replace')[-500:]}")
+            raise AssertionError(f"held container failed: {(run_dir / 'held-start.log').read_text(errors='replace')[-500:]}")
         safe = spec(False, ["/bin/live-probe", "deny", "exec"])["process"]
         check_exec(safe, [])
         safe_path = run_dir / "exec-safe.json"
