@@ -90,6 +90,19 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(PolicyError):
             parse_json('{"allowed_capabilities":[NaN]}')
 
+    def test_overflowed_json_number_and_library_output_are_rejected(self):
+        for literal in ("1e999", "-1e999", "Infinity"):
+            with self.subTest(literal=literal), self.assertRaises(PolicyError):
+                parse_json('{"extra":' + literal + '}')
+        value = spec()
+        value["extra"] = float("inf")
+        with self.assertRaises(PolicyError):
+            prepare(value, [])
+        process = {"noNewPrivileges": True, "args": ["/bin/live-probe", "deny", "exec"],
+                   "capabilities": {}, "extra": float("nan")}
+        with self.assertRaises(PolicyError):
+            check_exec(process, [])
+
 
 if __name__ == "__main__":
     unittest.main()

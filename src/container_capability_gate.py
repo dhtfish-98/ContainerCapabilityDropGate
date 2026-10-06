@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import re
 import subprocess
@@ -34,7 +35,7 @@ class PolicyError(ValueError):
 
 
 def parse_json(value: str) -> object:
-    """Reject ambiguous duplicate keys before comparing policy and OCI data."""
+    """Reject duplicate keys and nonfinite numbers before policy comparison."""
     def unique_object(pairs: list[tuple[str, object]]) -> dict:
         result = {}
         for name, item in pairs:
@@ -46,8 +47,21 @@ def parse_json(value: str) -> object:
     def reject_constant(value: str) -> object:
         raise PolicyError(f"nonfinite JSON value: {value}")
 
+    def finite_float(value: str) -> float:
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise PolicyError(f"nonfinite JSON number: {value}")
+        return parsed
+
     return json.loads(value, object_pairs_hook=unique_object,
-                      parse_constant=reject_constant)
+                      parse_constant=reject_constant, parse_float=finite_float)
+
+
+def _json_copy(value: object) -> object:
+    try:
+        return json.loads(json.dumps(value, allow_nan=False))
+    except (TypeError, ValueError) as error:
+        raise PolicyError(f"invalid JSON value: {error}") from error
 
 
 def _object(value: object, label: str) -> dict:
@@ -105,7 +119,7 @@ def prepare(spec: object, allowed: object) -> dict:
         raise PolicyError("creation capability sets must match and inheritance must be empty")
     if process.get("noNewPrivileges") is not True:
         raise PolicyError("noNewPrivileges must be true")
-    prepared = json.loads(json.dumps(spec))
+    prepared = _json_copy(spec)
     prepared["process"]["capabilities"] = {
         "bounding": requested["bounding"], "effective": requested["effective"],
         "permitted": requested["permitted"],
@@ -134,7 +148,7 @@ def check_exec(process: object, allowed: object) -> dict:
             requested["bounding"] != requested["permitted"] or \
             requested["inheritable"] or requested["ambient"]:
         raise PolicyError("exec capability sets must match and inheritance must be empty")
-    checked = json.loads(json.dumps(process))
+    checked = _json_copy(process)
     checked["capabilities"] = {name: requested[name] for name in SETS}
     return checked
 
@@ -149,7 +163,8 @@ def run_checked_exec(process: object, allowed: object, runtime: Path,
         raise PolicyError("temporary spec directory must be Build")
     with tempfile.TemporaryDirectory(prefix="capability-exec-", dir=build_root) as temp:
         spec_path = Path(temp) / "process.json"
-        spec_path.write_text(json.dumps(checked, sort_keys=True, indent=2) + "\n")
+        spec_path.write_text(json.dumps(checked, sort_keys=True, indent=2,
+                                        allow_nan=False) + "\n")
         return subprocess.run([str(runtime), "--root", str(runtime_root), "exec",
                                "--process", str(spec_path), container_id],
                               check=False).returncode
@@ -174,7 +189,8 @@ def main() -> int:
             if args.output is None:
                 parser.error("--output is required for prepare")
             output = prepare(value, allowed)
-            args.output.write_text(json.dumps(output, sort_keys=True, indent=2) + "\n")
+            args.output.write_text(json.dumps(output, sort_keys=True, indent=2,
+                                              allow_nan=False) + "\n")
             return 0
         if args.mode == "check-exec":
             check_exec(value, allowed)

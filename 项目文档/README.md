@@ -17,6 +17,6 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_macos_vm.py \
 
 `.github/workflows/verify.yml` 还准备了托管 Ubuntu 上的原生 Linux 内核/runc 实验，运行 `scripts/run_linux_host.py` 并校验官方 amd64 二进制摘要；它仍需在公开仓库的同一提交实际跑过，才能算托管 CI 实证。
 
-CLI 支持 `prepare`、`check-exec` 与 `run-exec`。`prepare` 对已有 OCI 配置做拒绝式检查，只保留已请求且获白名单允许的能力，**不会因白名单存在而自动授予能力**；`run-exec` 把已检查的进程配置复制到私有临时文件并传给指定 runc。部署时应限制调用者直接访问运行时或替换 bundle 的权限，并把策略文件及运行时路径纳入自己的变更控制。项目没有覆盖其他 OCI 运行时、真实多租户集群、镜像供应链或生产环境。
+CLI 支持 `prepare`、`check-exec` 与 `run-exec`。`prepare` 对已有 OCI 配置做拒绝式检查，只保留已请求且获白名单允许的能力，**不会因白名单存在而自动授予能力**；输入会拒绝重复 JSON 键和非有限数值，输出仅使用标准 JSON 数值。`run-exec` 把已检查的进程配置复制到私有临时文件并传给指定 runc。部署时应限制调用者直接访问运行时或替换 bundle 的权限，并把策略文件及运行时路径纳入自己的变更控制。项目没有覆盖其他 OCI 运行时、真实多租户集群、镜像供应链或生产环境。
 
 来源、第三方权利及验收边界见同目录的 `ORIGIN.md`、`THIRD_PARTY.md`、`CVP_STATUS.md`。
