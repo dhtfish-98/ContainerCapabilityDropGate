@@ -76,15 +76,22 @@ def prepare(spec: object, allowed: object) -> dict:
     if len(types) != len(set(types)) or not REQUIRED_NAMESPACES.issubset(types):
         raise PolicyError("required isolated namespaces are absent or duplicated")
     existing = _object(process.get("capabilities"), "process.capabilities")
+    requested = {}
     for name in SETS:
         given = _capabilities(existing.get(name, []), name)
         if not set(given).issubset(allowed):
             raise PolicyError(f"{name} requests capability outside policy")
+        requested[name] = given
+    if requested["bounding"] != requested["effective"] or \
+            requested["bounding"] != requested["permitted"] or \
+            requested["inheritable"] or requested["ambient"]:
+        raise PolicyError("creation capability sets must match and inheritance must be empty")
     if process.get("noNewPrivileges") is not True:
         raise PolicyError("noNewPrivileges must be true")
     prepared = json.loads(json.dumps(spec))
     prepared["process"]["capabilities"] = {
-        "bounding": allowed, "effective": allowed, "permitted": allowed,
+        "bounding": requested["bounding"], "effective": requested["effective"],
+        "permitted": requested["permitted"],
         "inheritable": [], "ambient": [],
     }
     return prepared
@@ -100,10 +107,16 @@ def check_exec(process: object, allowed: object) -> dict:
             any(not isinstance(arg, str) for arg in process["args"]):
         raise PolicyError("exec args must be a nonempty string list")
     caps = _object(process.get("capabilities"), "exec capabilities")
+    requested = {}
     for name in SETS:
         actual = _capabilities(caps.get(name, []), f"exec {name}")
         if not set(actual).issubset(allowed):
             raise PolicyError(f"exec {name} exceeds policy")
+        requested[name] = actual
+    if requested["bounding"] != requested["effective"] or \
+            requested["bounding"] != requested["permitted"] or \
+            requested["inheritable"] or requested["ambient"]:
+        raise PolicyError("exec capability sets must match and inheritance must be empty")
     return process
 
 

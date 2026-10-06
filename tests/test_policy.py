@@ -1,8 +1,10 @@
 import copy
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.container_capability_gate import PolicyError, check_exec, prepare, run_checked_exec
 
 
@@ -33,6 +35,14 @@ class PolicyTests(unittest.TestCase):
         result = prepare(spec(["CAP_NET_RAW"]), ["CAP_NET_RAW"])
         self.assertEqual(result["process"]["capabilities"]["effective"], ["CAP_NET_RAW"])
         self.assertEqual(result["process"]["capabilities"]["ambient"], [])
+
+    def test_allowlist_never_adds_unrequested_capability(self):
+        result = prepare(spec(), ["CAP_NET_RAW"])
+        self.assertEqual(result["process"]["capabilities"]["effective"], [])
+        value = spec(["CAP_NET_RAW"])
+        value["process"]["capabilities"]["effective"] = []
+        with self.assertRaises(PolicyError):
+            prepare(value, ["CAP_NET_RAW"])
 
     def test_namespace_host_path_and_nnp_rejected(self):
         value = spec()

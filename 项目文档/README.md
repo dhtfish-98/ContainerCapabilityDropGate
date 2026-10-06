@@ -15,6 +15,6 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_macos_vm.py \
 
 该命令需要 Apple silicon、macOS Virtualization.framework、固定摘要的 Alpine ARM64 内核/initramfs、Zig 和官方 runc v1.5.2 ARM64 测试二进制；这些依赖存于 `Build/环境`，不随本项目源码发行。运行回执、串口日志、临时镜像和二进制只写入 `Build/验证/ContainerCapabilityDropGate-20261006`。
 
-CLI 支持 `prepare`、`check-exec` 与 `run-exec`。`prepare` 对已有 OCI 配置做拒绝式检查，再输出白名单能力集；`run-exec` 把已检查的进程配置复制到私有临时文件并传给指定 runc。部署时应限制调用者直接访问运行时或替换 bundle 的权限，并把策略文件及运行时路径纳入自己的变更控制。项目没有覆盖其他 OCI 运行时、真实多租户集群、镜像供应链或生产环境。
+CLI 支持 `prepare`、`check-exec` 与 `run-exec`。`prepare` 对已有 OCI 配置做拒绝式检查，只保留已请求且获白名单允许的能力，**不会因白名单存在而自动授予能力**；`run-exec` 把已检查的进程配置复制到私有临时文件并传给指定 runc。部署时应限制调用者直接访问运行时或替换 bundle 的权限，并把策略文件及运行时路径纳入自己的变更控制。项目没有覆盖其他 OCI 运行时、真实多租户集群、镜像供应链或生产环境。
 
 来源、第三方权利及验收边界见同目录的 `ORIGIN.md`、`THIRD_PARTY.md`、`CVP_STATUS.md`。
