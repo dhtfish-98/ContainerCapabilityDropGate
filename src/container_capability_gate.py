@@ -67,7 +67,7 @@ def parse_json(value: str) -> object:
 
 def _json_copy(value: object) -> object:
     try:
-        return json.loads(json.dumps(value, allow_nan=False))
+        return parse_json(json.dumps(value, allow_nan=False))
     except (TypeError, ValueError) as error:
         raise PolicyError(f"invalid JSON value: {error}") from error
 
