@@ -1,0 +1,53 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Verify policy decisions
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest discover -s tests -v
+
+  native-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Build and pinned runtime
+        shell: bash
+        run: |
+          mkdir -p Build/ci
+          curl --fail --location --silent --show-error \
+            https://github.com/opencontainers/runc/releases/download/v1.5.2/runc.amd64 \
+            --output Build/ci/runc.amd64
+          printf '%s  %s\n' \
+            '599f6f94ff8c5057241eff0d54c3c74f95c34935b6457b33fe545defc61e9488' \
+            'Build/ci/runc.amd64' | sha256sum --check
+          chmod 755 Build/ci/runc.amd64
+      - name: Verify real kernel capability sets and OCI exec
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          sudo -E python3 scripts/run_linux_host.py \
+            --build-root "$GITHUB_WORKSPACE/Build" \
+            --runtime "$GITHUB_WORKSPACE/Build/ci/runc.amd64"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-linux-receipt
+          path: Build/验证/ContainerCapabilityDropGate-20261006/native-*/receipt.json
+          if-no-files-found: ignore

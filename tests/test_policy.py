@@ -1,0 +1,69 @@
+import copy
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from src.container_capability_gate import PolicyError, check_exec, prepare, run_checked_exec
+
+
+def spec(caps=()):
+    names = list(caps)
+    return {
+        "ociVersion": "1.3.0",
+        "process": {"terminal": False, "args": ["/bin/live-probe", "deny"],
+                    "noNewPrivileges": True,
+                    "capabilities": {name: names for name in
+                                     ("bounding", "effective", "permitted")}},
+        "root": {"path": "rootfs"},
+        "linux": {"namespaces": [{"type": name} for name in
+                                ("pid", "mount", "network", "ipc", "uts")]},
+    }
+
+
+class PolicyTests(unittest.TestCase):
+    def test_denied_capability_in_any_set(self):
+        for name in ("bounding", "effective", "permitted", "inheritable", "ambient"):
+            with self.subTest(name=name):
+                value = spec()
+                value["process"]["capabilities"][name] = ["CAP_NET_RAW"]
+                with self.assertRaises(PolicyError):
+                    prepare(value, [])
+
+    def test_explicit_whitelist_and_empty_inheritable_ambient(self):
+        result = prepare(spec(["CAP_NET_RAW"]), ["CAP_NET_RAW"])
+        self.assertEqual(result["process"]["capabilities"]["effective"], ["CAP_NET_RAW"])
+        self.assertEqual(result["process"]["capabilities"]["ambient"], [])
+
+    def test_namespace_host_path_and_nnp_rejected(self):
+        value = spec()
+        value["linux"]["namespaces"][0]["path"] = "/proc/1/ns/pid"
+        with self.assertRaises(PolicyError):
+            prepare(value, [])
+        value = spec()
+        value["process"]["noNewPrivileges"] = False
+        with self.assertRaises(PolicyError):
+            prepare(value, [])
+
+    def test_exec_cannot_regain_capability(self):
+        process = {"noNewPrivileges": True, "args": ["/bin/live-probe", "deny", "exec"],
+                   "capabilities": {"bounding": [], "effective": ["CAP_NET_RAW"],
+                                    "permitted": [], "inheritable": [], "ambient": []}}
+        with self.assertRaises(PolicyError):
+            check_exec(process, [])
+        process = copy.deepcopy(process)
+        process["capabilities"]["effective"] = []
+        self.assertIs(check_exec(process, []), process)
+
+    def test_rejected_exec_never_reaches_runtime(self):
+        process = {"noNewPrivileges": True, "args": ["/bin/live-probe", "allow", "exec"],
+                   "capabilities": {name: ["CAP_NET_RAW"] for name in
+                                    ("bounding", "effective", "permitted")}}
+        with patch("src.container_capability_gate.subprocess.run") as runtime:
+            with self.assertRaises(PolicyError):
+                run_checked_exec(process, [], Path("/usr/bin/runc"), Path("/run/runc"),
+                                 "held", Path("/tmp/Build"))
+            runtime.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
