@@ -15,7 +15,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_macos_vm.py \
 
 该命令需要 Apple silicon、macOS Virtualization.framework、固定摘要的 Alpine ARM64 内核/initramfs、Zig 和官方 runc v1.5.2 ARM64 测试二进制；这些依赖存于 `Build/环境`，不随本项目源码发行。运行回执、串口日志、临时镜像和二进制只写入 `Build/验证/ContainerCapabilityDropGate-20261006`。
 
-`.github/workflows/verify.yml` 还准备了托管 Ubuntu 上的原生 Linux 内核/runc 实验，运行 `scripts/run_linux_host.py`，校验官方 amd64 二进制摘要，并拟经 `run-exec` CLI 实际调用受保护的 runc。每次实验在 `/var/lib/container-capability-gate-tests/<run-id>` 新建独立 root 目录，遇到同名目录即拒绝，不复用部署状态；提权实验只在推送或同仓 PR 中运行，外部 fork PR 只跑非提权策略测试。该工作流仍需在公开仓库的同一提交实际跑过，才能算托管 CI 实证。
+`.github/workflows/verify.yml` 还准备了托管 Ubuntu 上的原生 Linux 内核/runc 实验，运行 `scripts/run_linux_host.py`，校验官方 amd64 二进制摘要，并拟经 `run-exec` CLI 实际调用受保护的 runc。每次实验在 `/var/lib/container-capability-gate-tests/<run-id>` 新建独立 root 目录，遇到同名目录即拒绝，不复用部署状态；提权实验仅在推送或维护者手动触发时运行，所有 PR 只跑非提权策略测试。该工作流仍需在公开仓库的同一提交实际跑过，才能算托管 CI 实证。
 
 CLI 支持 `prepare`、`check-exec` 与 `run-exec`。`prepare` 对已有 OCI 配置做拒绝式检查，只保留已请求且获白名单允许的能力，**不会因白名单存在而自动授予能力**；输入会拒绝重复 JSON 键和非有限数值，输出仅使用标准 JSON 数值。`check-exec` 与 `run-exec` 还必须提供 `--created-spec`，以记录中的创建能力限制后续 exec 的能力请求。
 
