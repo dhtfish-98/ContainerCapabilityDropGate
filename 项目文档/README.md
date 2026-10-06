@@ -1,6 +1,6 @@
 # ContainerCapabilityDropGate
 
-维护者：**dhtfish98**。状态：本地研究候选，尚未发布正式版本。
+维护者：**dhtfish98**。当前源码版本：**v0.1.0**；发行与 CI 状态以对应 Git 提交的仓库记录为准。
 
 本项目为自有 OCI 工作流提供能力白名单检查：创建容器前检查五组 capability 并生成受限 `config.json`；执行 `runc exec` 前检查独立的进程配置，并提供管理员专用的 `run-exec` 入口。它不修改 runc，也不声称修复 runc 漏洞。
 
@@ -15,7 +15,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_macos_vm.py \
 
 该命令需要 Apple silicon、macOS Virtualization.framework、固定摘要的 Alpine ARM64 内核/initramfs、Zig 和官方 runc v1.5.2 ARM64 测试二进制；这些依赖存于 `Build/环境`，不随本项目源码发行。运行回执、串口日志、临时镜像和二进制只写入 `Build/验证/ContainerCapabilityDropGate-20261006`。
 
-`.github/workflows/verify.yml` 还准备了托管 Ubuntu 上的原生 Linux 内核/runc 实验，运行 `scripts/run_linux_host.py`，校验官方 amd64 二进制摘要，并拟经 `run-exec` CLI 实际调用受保护的 runc。每次实验在 `/var/lib/container-capability-gate-tests/<run-id>` 新建独立 root 目录，遇到同名目录即拒绝，不复用部署状态；提权实验只允许 `main` 推送、`v*` 标签推送或维护者在这些受信 ref 手动触发，所有 PR 只跑非提权策略测试。部署公开工作流前，仓库管理员须保护 `main` 分支与发行标签并限制手动触发所选 ref；工作流条件只限制事件/ref，不替代仓库权限设置。该工作流仍需在公开仓库的同一提交实际跑过，才能算托管 CI 实证。
+`.github/workflows/verify.yml` 在托管 Ubuntu 上运行原生 Linux 内核/runc 实验：`scripts/run_linux_host.py` 校验官方 amd64 二进制摘要，并经 `run-exec` CLI 实际调用受保护的 runc。2026-10-06 的[公开主分支运行 37395992716](https://github.com/dhtfish-98/ContainerCapabilityDropGate/actions/runs/37395992716)在提交 `5879081272bb5f5014a3e3f1bd4e442f38539523` 上通过策略矩阵及原生 Linux 实验；新提交须核对各自的 CI 运行。每次原生实验在 `/var/lib/container-capability-gate-tests/<run-id>` 新建独立 root 目录，遇到同名目录即拒绝，不复用部署状态；提权实验只允许 `main` 推送、`v*` 标签推送或维护者在这些受信 ref 手动触发，所有 PR 只跑非提权策略测试。仓库管理员仍须实际保护 `main` 分支与发行标签并限制手动触发所选 ref；工作流条件只限制事件/ref，不替代仓库权限设置。
 
 CLI 支持 `prepare`、`check-exec` 与 `run-exec`。`prepare` 对已有 OCI 配置做拒绝式检查，只保留已请求且获白名单允许的能力，**不会因白名单存在而自动授予能力**；输入会拒绝重复 JSON 键和非有限数值，输出仅使用标准 JSON 数值。`check-exec` 与 `run-exec` 还必须提供 `--created-spec`，以记录中的创建能力限制后续 exec 的能力请求。
 
