@@ -18,7 +18,7 @@ import sys
 PROJECT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(PROJECT))
-from src.container_capability_gate import PolicyError, check_exec, prepare  # noqa: E402
+from src.container_capability_gate import check_exec, prepare, trusted_private_root  # noqa: E402
 
 
 RUNC_SHA256 = "599f6f94ff8c5057241eff0d54c3c74f95c34935b6457b33fe545defc61e9488"
@@ -120,8 +120,18 @@ def main() -> int:
         receipt["source_sha256"] = {str(path.relative_to(PROJECT)): sha256(path) for path in (
             PROJECT / "src/container_capability_gate.py", PROJECT / "tests/live_probe.c",
             Path(__file__))}
-        state = run_dir / "runc-state"
-        state.mkdir()
+        private_parent = Path("/var/lib/container-capability-gate-tests")
+        private_parent.mkdir(mode=0o700, exist_ok=True)
+        trusted_private_root(private_parent)
+        private_root = private_parent / run_id
+        private_root.mkdir(mode=0o700, exist_ok=False)
+        receipt["private_test_root"] = str(private_root)
+        protected_runtime = private_root / "runc"
+        shutil.copy2(runtime, protected_runtime)
+        protected_runtime.chmod(0o700)
+        state = private_root / "runtime-state"
+        state.mkdir(mode=0o700, exist_ok=True)
+        state.chmod(0o700)
         cases = [("baseline", True, "allow"), ("guard", False, "deny"),
                  ("allow", True, "allow"), ("held", False, "hold")]
         bundles = {}
@@ -136,7 +146,7 @@ def main() -> int:
             bundles[name] = bundle
         details = []
         for name, raw, _ in cases[:3]:
-            result = command(runtime, state, "run", "--no-pivot", "--bundle",
+            result = command(protected_runtime, state, "run", "--no-pivot", "--bundle",
                              str(bundles[name]), name)
             log = (result.stdout + result.stderr).decode(errors="replace")
             (run_dir / f"{name}.log").write_text(log)
@@ -146,37 +156,59 @@ def main() -> int:
             details.append({"case": name, "exit": result.returncode, "probe_rows": rows,
                             "log_sha256": sha256(run_dir / f"{name}.log")})
         with (run_dir / "held-start.log").open("wb") as stream:
-            held = subprocess.run([str(runtime), "--root", str(state), "run",
+            held = subprocess.run([str(protected_runtime), "--root", str(state), "run",
                                    "--no-pivot", "--detach", "--bundle",
                                    str(bundles["held"]), "held"],
                                   stdin=subprocess.DEVNULL, stdout=stream,
                                   stderr=subprocess.STDOUT, timeout=15, check=False)
         if held.returncode != 0:
             raise AssertionError(f"held container failed: {(run_dir / 'held-start.log').read_text(errors='replace')[-500:]}")
+        protected_record = private_root / "approved/held/config.json"
+        protected_record.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        protected_record.parent.parent.chmod(0o700)
+        protected_record.parent.chmod(0o700)
+        protected_record.write_bytes((bundles["held"] / "config.json").read_bytes())
+        protected_record.chmod(0o600)
+        if sha256(protected_record) != sha256(bundles["held"] / "config.json"):
+            raise AssertionError("protected creation record differs from the launched bundle")
+        receipt["protected_record_sha256"] = sha256(protected_record)
+        policy_path = run_dir / "exec-policy.json"
+        policy_path.write_text('{"allowed_capabilities":["CAP_NET_RAW"]}\n')
         safe = spec(False, ["/bin/live-probe", "deny", "exec"])["process"]
-        check_exec(safe, [])
+        # Omitted groups must be emitted explicitly by the production entry.
+        safe["capabilities"] = {}
+        checked_safe = check_exec(safe, ["CAP_NET_RAW"], [])
+        if any(checked_safe["capabilities"].values()) or len(checked_safe["capabilities"]) != 5:
+            raise AssertionError("omitted exec groups were not normalized to five empty sets")
         safe_path = run_dir / "exec-safe.json"
         safe_path.write_text(json.dumps(safe, sort_keys=True, indent=2) + "\n")
-        safe_result = command(runtime, state, "exec", "--process", str(safe_path), "held")
+        gate_command = [sys.executable, str(PROJECT / "src/container_capability_gate.py"),
+                        "run-exec", "--policy", str(policy_path),
+                        "--created-spec", str(protected_record), "--runtime", str(protected_runtime),
+                        "--runtime-root", str(state), "--id", "held",
+                        "--private-root", str(private_root)]
+        safe_result = subprocess.run([*gate_command, "--input", str(safe_path)],
+                                     input=b"", capture_output=True, timeout=15, check=False)
         safe_log = (safe_result.stdout + safe_result.stderr).decode(errors="replace")
         (run_dir / "exec-safe.log").write_text(safe_log)
         if safe_result.returncode != 0:
-            raise AssertionError(f"safe OCI exec failed: {safe_log[-500:]}")
-        details.append({"case": "exec-safe", "exit": safe_result.returncode,
+            raise AssertionError(f"checked OCI exec failed: {safe_log[-500:]}")
+        details.append({"case": "exec-safe-via-run-exec", "exit": safe_result.returncode,
                         "probe_rows": cap_probe_rows(safe_log, 0,
                                                      ("OCI_EXEC", "OCI_EXEC_CHILD")),
                         "log_sha256": sha256(run_dir / "exec-safe.log")})
         unsafe = spec(True, ["/bin/live-probe", "allow", "exec"])["process"]
-        try:
-            check_exec(unsafe, [])
-        except PolicyError:
-            receipt["unsafe_exec_rejected_by_gate"] = True
-        else:
-            raise AssertionError("gate accepted unsafe OCI exec spec")
-        # Direct runtime path is an intentional ungated control, not an upstream bug.
         unsafe_path = run_dir / "exec-unsafe-direct.json"
         unsafe_path.write_text(json.dumps(unsafe, sort_keys=True, indent=2) + "\n")
-        unsafe_result = command(runtime, state, "exec", "--process", str(unsafe_path), "held")
+        rejected = subprocess.run([*gate_command, "--input", str(unsafe_path)],
+                                  input=b"", capture_output=True, timeout=15, check=False)
+        receipt["unsafe_run_exec_exit"] = rejected.returncode
+        receipt["unsafe_run_exec_output"] = (rejected.stdout + rejected.stderr).decode(errors="replace")
+        if rejected.returncode != 2 or "exceeds approved creation capabilities" not in \
+                receipt["unsafe_run_exec_output"]:
+            raise AssertionError("run-exec did not reject capability omitted at creation")
+        # Direct runtime path is an intentional ungated control, not an upstream bug.
+        unsafe_result = command(protected_runtime, state, "exec", "--process", str(unsafe_path), "held")
         unsafe_log = (unsafe_result.stdout + unsafe_result.stderr).decode(errors="replace")
         (run_dir / "exec-unsafe-direct.log").write_text(unsafe_log)
         if unsafe_result.returncode != 0:
@@ -192,12 +224,12 @@ def main() -> int:
     except Exception as error:
         receipt.update(status="OPEN", error=f"{type(error).__name__}: {error}")
     finally:
-        if "state" in locals() and "runtime" in locals():
+        if "state" in locals() and "protected_runtime" in locals():
             # A cleanup issue leaves the isolated test lifecycle unverified.
             try:
-                result = command(runtime, state, "kill", "held", "SIGKILL", timeout=5)
+                result = command(protected_runtime, state, "kill", "held", "SIGKILL", timeout=5)
                 receipt["held_kill_exit"] = result.returncode
-                result = command(runtime, state, "delete", "--force", "held", timeout=5)
+                result = command(protected_runtime, state, "delete", "--force", "held", timeout=5)
                 receipt["held_delete_exit"] = result.returncode
             except Exception as error:
                 receipt["cleanup_error"] = f"{type(error).__name__}: {error}"

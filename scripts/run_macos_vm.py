@@ -101,7 +101,7 @@ def create_overlay(run_dir: Path, probe: Path, runc: Path) -> tuple[Path, dict]:
 
     safe_exec = spec(False, "deny")["process"]
     safe_exec["args"] = ["/bin/live-probe", "deny", "exec"]
-    check_exec(safe_exec, [])
+    check_exec(safe_exec, [], [])
     (overlay / "opt/ccdg/exec-safe.json").write_text(
         json.dumps(safe_exec, sort_keys=True, indent=2) + "\n")
 
@@ -117,7 +117,7 @@ def create_overlay(run_dir: Path, probe: Path, runc: Path) -> tuple[Path, dict]:
     else:
         outside_policy_rejected = False
     try:
-        check_exec(unsafe_exec, [])
+        check_exec(unsafe_exec, [], [])
     except PolicyError:
         exec_cap_regain_rejected = True
     else:
