@@ -59,5 +59,11 @@ jobs:
         if: always()
         with:
           name: native-linux-receipt
-          path: Build/验证/ContainerCapabilityDropGate-20261006/native-*/receipt.json
+          path: |
+            Build/验证/ContainerCapabilityDropGate-20261006/native-*/receipt.json
+            Build/验证/ContainerCapabilityDropGate-20261006/native-*/baseline.log
+            Build/验证/ContainerCapabilityDropGate-20261006/native-*/guard.log
+            Build/验证/ContainerCapabilityDropGate-20261006/native-*/allow.log
+            Build/验证/ContainerCapabilityDropGate-20261006/native-*/exec-safe.log
+            Build/验证/ContainerCapabilityDropGate-20261006/native-*/exec-unsafe-direct.log
           if-no-files-found: ignore
