@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.container_capability_gate import PolicyError, check_exec, prepare, run_checked_exec
+from src.container_capability_gate import PolicyError, check_exec, parse_json, prepare, run_checked_exec
 
 
 def spec(caps=()):
@@ -83,6 +83,12 @@ class PolicyTests(unittest.TestCase):
                 run_checked_exec(process, [], Path("/usr/bin/runc"), Path("/run/runc"),
                                  "held", Path("/tmp/Build"))
             runtime.assert_not_called()
+
+    def test_duplicate_json_key_is_rejected(self):
+        with self.assertRaises(PolicyError):
+            parse_json('{"allowed_capabilities":[],"allowed_capabilities":["CAP_NET_RAW"]}')
+        with self.assertRaises(PolicyError):
+            parse_json('{"allowed_capabilities":[NaN]}')
 
 
 if __name__ == "__main__":

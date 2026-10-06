@@ -33,6 +33,23 @@ class PolicyError(ValueError):
     pass
 
 
+def parse_json(value: str) -> object:
+    """Reject ambiguous duplicate keys before comparing policy and OCI data."""
+    def unique_object(pairs: list[tuple[str, object]]) -> dict:
+        result = {}
+        for name, item in pairs:
+            if name in result:
+                raise PolicyError(f"duplicate JSON key: {name}")
+            result[name] = item
+        return result
+
+    def reject_constant(value: str) -> object:
+        raise PolicyError(f"nonfinite JSON value: {value}")
+
+    return json.loads(value, object_pairs_hook=unique_object,
+                      parse_constant=reject_constant)
+
+
 def _object(value: object, label: str) -> dict:
     if not isinstance(value, dict):
         raise PolicyError(f"{label} must be an object")
@@ -149,10 +166,10 @@ def main() -> int:
     parser.add_argument("--id")
     parser.add_argument("--build-root", type=Path)
     args = parser.parse_args()
-    policy = _object(json.loads(args.policy.read_text()), "policy")
-    allowed = policy.get("allowed_capabilities")
-    value = json.loads(args.input.read_text())
     try:
+        policy = _object(parse_json(args.policy.read_text()), "policy")
+        allowed = policy.get("allowed_capabilities")
+        value = parse_json(args.input.read_text())
         if args.mode == "prepare":
             if args.output is None:
                 parser.error("--output is required for prepare")
@@ -167,7 +184,7 @@ def main() -> int:
             parser.error("run-exec requires --runtime, --runtime-root, --id and --build-root")
         return run_checked_exec(value, allowed, args.runtime, args.runtime_root,
                                 args.id, args.build_root)
-    except PolicyError as error:
+    except (PolicyError, json.JSONDecodeError) as error:
         parser.exit(2, f"POLICY_REJECT: {error}\n")
 
 
