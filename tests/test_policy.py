@@ -161,11 +161,13 @@ class PolicyTests(unittest.TestCase):
             parse_json('{"allowed_capabilities":[],"allowed_capabilities":["CAP_NET_RAW"]}')
         with self.assertRaises(PolicyError):
             parse_json('{"allowed_capabilities":[NaN]}')
-        value = spec()
-        value[1] = "numeric key"
-        value["1"] = "string key"
-        with self.assertRaises(PolicyError):
-            prepare(value, [])
+        for native_key, json_key in ((1, "1"), (True, "true"), (None, "null")):
+            with self.subTest(native_key=native_key):
+                value = spec()
+                value[native_key] = "native key"
+                value[json_key] = "string key"
+                with self.assertRaises(PolicyError):
+                    prepare(value, [])
 
     def test_overflowed_json_number_and_library_output_are_rejected(self):
         for literal in ("1e999", "-1e999", "Infinity"):
