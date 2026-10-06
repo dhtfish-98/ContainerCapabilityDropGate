@@ -62,7 +62,17 @@ class PolicyTests(unittest.TestCase):
             check_exec(process, [])
         process = copy.deepcopy(process)
         process["capabilities"]["effective"] = []
-        self.assertIs(check_exec(process, []), process)
+        checked = check_exec(process, [])
+        self.assertEqual(checked, process)
+        self.assertIsNot(checked, process)
+
+    def test_exec_missing_sets_are_emitted_as_explicit_empty_lists(self):
+        process = {"noNewPrivileges": True, "args": ["/bin/live-probe", "deny", "exec"],
+                   "capabilities": {}}
+        checked = check_exec(process, [])
+        self.assertEqual(set(checked["capabilities"]),
+                         {"bounding", "effective", "permitted", "inheritable", "ambient"})
+        self.assertTrue(all(value == [] for value in checked["capabilities"].values()))
 
     def test_rejected_exec_never_reaches_runtime(self):
         process = {"noNewPrivileges": True, "args": ["/bin/live-probe", "allow", "exec"],

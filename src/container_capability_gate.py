@@ -117,7 +117,9 @@ def check_exec(process: object, allowed: object) -> dict:
             requested["bounding"] != requested["permitted"] or \
             requested["inheritable"] or requested["ambient"]:
         raise PolicyError("exec capability sets must match and inheritance must be empty")
-    return process
+    checked = json.loads(json.dumps(process))
+    checked["capabilities"] = {name: requested[name] for name in SETS}
+    return checked
 
 
 def run_checked_exec(process: object, allowed: object, runtime: Path,
